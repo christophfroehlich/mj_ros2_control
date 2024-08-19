@@ -89,19 +89,22 @@ void MuJoCoSimulator::controlCBImpl([[maybe_unused]] const mjModel * m, mjData *
         d->ctrl[i] = 0.;
       }
     }
+
+    if (joint_control_methods_[i] & POS_VELOCITY) {
+      // Joint-level impedance control
+      if (std::isfinite(pos_cmd[i]) && std::isfinite(vel_cmd[i])) {
+        d->ctrl[i] = stiff[i] * (pos_cmd[i] - d->qpos[i]) +       // stiffness
+          damp[i] * (vel_cmd[i] - d->qvel[i]);       // damping
+      } else {
+        std::cout << "commands/params not finite" << std::endl;
+        d->ctrl[i] = -damp[i] * d->actuator_velocity[i];        // damping
+      }
+      if (!std::isfinite(d->ctrl[i])) {
+        d->ctrl[i] = 0.0;
+        std::cout << "output not finite" << std::endl;
+      }
+    }
   }
-  // // Joint-level impedance control
-  // if (std::isfinite(pos_cmd[i]) && std::isfinite(vel_cmd[i])) {
-  //   d->ctrl[i] = stiff[i] * (pos_cmd[i] - d->qpos[i]) +           // stiffness
-  //     damp[i] * (vel_cmd[i] - d->actuator_velocity[i]);           // damping
-  // } else {
-  //   std::cout << "commands/params not finite" << std::endl;
-  //   d->ctrl[i] = -damp[i] * d->actuator_velocity[i];            // damping
-  // }
-  // if (!std::isfinite(d->ctrl[i])) {
-  //   d->ctrl[i] = 0.0;
-  //   std::cout << "output not finite" << std::endl;
-  // }
   command_mutex.unlock();
 }
 
@@ -133,65 +136,113 @@ int MuJoCoSimulator::simulateImpl(
   double kp, kv;
   std::vector<double> init_val;
   joint_control_methods_.resize(hw_info.joints.size());
+  stiff.resize(hw_info.joints.size());
+  damp.resize(hw_info.joints.size());
 
   for (size_t j = 0; j < hw_info.joints.size(); ++j) {
     auto joint_info = hw_info.joints[j];
-    if (joint_info.command_interfaces.size() > 1
-      // joint_info.command_interfaces.size() == 2 &&
-      // joint_info.command_interfaces.at(0).name == "position" &&
-      // joint_info.command_interfaces.at(1).name == "velocity"
-    )
-    {
+
+    const std::string joint_name = joint_info.name;
+    auto get_initial_value =
+      [joint_name](const hardware_interface::InterfaceInfo & interface_info) {
+        double initial_value{0.0};
+        if (!interface_info.initial_value.empty()) {
+          try {
+            initial_value = std::stod(interface_info.initial_value);
+            std::cout << "found initial value: " << initial_value << std::endl;
+          } catch (std::invalid_argument &) {
+            std::cout <<
+              "Failed converting initial_value string to real number for the joint "
+                      << joint_name
+                      << " and state interface " << interface_info.name
+                      << ". Actual value of parameter: " << interface_info.initial_value
+                      << ". Initial value will be set to 0.0" << std::endl;
+          }
+        }
+        return initial_value;
+      };
+
+    // parse initial values
+    for (unsigned int i = 0; i < joint_info.state_interfaces.size(); ++i) {
+      if (joint_info.state_interfaces[i].name == "position") {
+        double joint_init_val = get_initial_value(joint_info.state_interfaces.at(0));
+        if (std::isfinite(joint_init_val)) {
+          init_val.push_back(joint_init_val);
+        } else {
+          init_val.push_back(0.0);
+        }
+      }
+    }
+
+    // TODO(anyone): rewrite logic of size/type checks
+    if (joint_info.command_interfaces.size() > 2) {
       mju_error("Command interface combination is not supported");
       return 1;
     }
     if (
-      joint_info.command_interfaces.size() == 1 && (
+      (joint_info.command_interfaces.size() == 1 && (
         joint_info.command_interfaces.at(0).name == "position" ||
         joint_info.command_interfaces.at(0).name == "velocity" ||
-        joint_info.command_interfaces.at(0).name == "effort"))
+        joint_info.command_interfaces.at(0).name == "effort")) ||
+      (joint_info.command_interfaces.size() == 2 &&
+      joint_info.command_interfaces.at(0).name == "position" &&
+      joint_info.command_interfaces.at(1).name == "velocity"))
     {
       mjsActuator * pact = mjs_addActuator(spec, def);
-      const std::string joint_name = joint_info.name;
       mjs_setString(pact->target, joint_name.c_str());
-
-      auto get_initial_value =
-        [joint_name](const hardware_interface::InterfaceInfo & interface_info) {
-          double initial_value{0.0};
-          if (!interface_info.initial_value.empty()) {
-            try {
-              initial_value = std::stod(interface_info.initial_value);
-              std::cout << "found initial value: " << initial_value << std::endl;
-            } catch (std::invalid_argument &) {
-              std::cout <<
-                "Failed converting initial_value string to real number for the joint "
-                        << joint_name
-                        << " and state interface " << interface_info.name
-                        << ". Actual value of parameter: " << interface_info.initial_value
-                        << ". Initial value will be set to 0.0" << std::endl;
-            }
-          }
-          return initial_value;
-        };
-
-
-      // parse initial values
-      for (unsigned int i = 0; i < joint_info.state_interfaces.size(); ++i) {
-        if (joint_info.state_interfaces[i].name == "position") {
-          double joint_init_val = get_initial_value(joint_info.state_interfaces.at(0));
-          if (std::isfinite(joint_init_val)) {
-            init_val.push_back(joint_init_val);
+      if (joint_info.command_interfaces.size() == 1) {
+        if (joint_info.command_interfaces.at(0).name == "position") {
+          mjs_setString(pact->name, (joint_name + "_pos").c_str());
+          joint_control_methods_[j] |= POSITION;
+          // https://mujoco.readthedocs.io/en/stable/XMLreference.html#actuator-position
+          auto it = joint_info.parameters.find("p");
+          if (it != joint_info.parameters.end()) {
+            kp = std::stod(it->second);
           } else {
-            init_val.push_back(0.0);
+            kp = 1.;
           }
+          it = joint_info.parameters.find("d");
+          if (it != joint_info.parameters.end()) {
+            kv = std::stod(it->second);
+          } else {
+            kv = 0.;
+          }
+          pact->gainprm[0] = kp;
+          pact->biasprm[1] = -kp;
+          pact->biasprm[2] = -kv;
+        } else if (
+          joint_info.command_interfaces.at(0).name == "velocity")
+        {
+          joint_control_methods_[j] |= VELOCITY;
+          mjs_setString(pact->name, (joint_name + "_vel").c_str());
+          // https://mujoco.readthedocs.io/en/stable/XMLreference.html#actuator-velocity
+          auto it = joint_info.parameters.find("d");
+          if (it != joint_info.parameters.end()) {
+            kv = std::stod(it->second);
+          } else {
+            kv = 1;
+          }
+          pact->gainprm[0] = kv;
+          pact->biasprm[2] = -kv;
+        } else if (
+          joint_info.command_interfaces.at(0).name == "effort")
+        {
+          joint_control_methods_[j] |= EFFORT;
+          mjs_setString(pact->name, (joint_name + "_eff").c_str());
+          // https://mujoco.readthedocs.io/en/stable/XMLreference.html#actuator-motor
+          pact->gainprm[0] = 1;
         }
-      }
-      if (
-        joint_info.command_interfaces.at(0).name == "position")
+        auto act_name = mjs_getString(pact->name);
+        std::cout << "Added actuator " << act_name << std::endl;
+      } else if (joint_info.command_interfaces.size() == 2 &&
+        joint_info.command_interfaces.at(0).name == "position" &&
+        joint_info.command_interfaces.at(1).name == "velocity")
       {
-        mjs_setString(pact->name, (joint_name + "_pos").c_str());
-        joint_control_methods_[j] |= POSITION;
-        // https://mujoco.readthedocs.io/en/stable/XMLreference.html#actuator-position
+        joint_control_methods_[j] |= POS_VELOCITY;
+        mjs_setString(pact->name, (joint_name + "_pos_vel").c_str());
+        // https://mujoco.readthedocs.io/en/stable/XMLreference.html#actuator-motor
+        pact->gainprm[0] = 1;
+
         auto it = joint_info.parameters.find("p");
         if (it != joint_info.parameters.end()) {
           kp = std::stod(it->second);
@@ -204,36 +255,15 @@ int MuJoCoSimulator::simulateImpl(
         } else {
           kv = 0.;
         }
-        pact->gainprm[0] = kp;
-        pact->biasprm[1] = -kp;
-        pact->biasprm[2] = -kv;
-      } else if (
-        joint_info.command_interfaces.at(0).name == "velocity")
-      {
-        joint_control_methods_[j] |= VELOCITY;
-        mjs_setString(pact->name, (joint_name + "_vel").c_str());
-        // https://mujoco.readthedocs.io/en/stable/XMLreference.html#actuator-velocity
-        auto it = joint_info.parameters.find("d");
-        if (it != joint_info.parameters.end()) {
-          kv = std::stod(it->second);
-        } else {
-          kv = 1;
-        }
-        pact->gainprm[0] = kv;
-        pact->biasprm[2] = -kv;
-      } else if (
-        joint_info.command_interfaces.at(0).name == "effort")
-      {
-        joint_control_methods_[j] |= EFFORT;
-        mjs_setString(pact->name, (joint_name + "_eff").c_str());
-        // https://mujoco.readthedocs.io/en/stable/XMLreference.html#actuator-motor
-        pact->gainprm[0] = 1;
+        stiff[j] = kp;
+        damp[j] = kv;
+
+        auto act_name = mjs_getString(pact->name);
+        std::cout << "Added actuator " << act_name << " with kp,kv " << kp << ", " << kv <<
+          std::endl;
       }
       // TODO: add something useful here
       mjs_setString(pact->info, joint_name.c_str());
-
-      auto act_name = mjs_getString(pact->name);
-      std::cout << "Added actuator " << act_name << std::endl;
     }
   }
 
@@ -308,7 +338,6 @@ int MuJoCoSimulator::simulateImpl(
     auto end = std::chrono::system_clock::now();
 
     // Sleep for a while
-    // TODO(anyone): measure time spent in simulation and sleep accordingly
     std::this_thread::sleep_for(update_period - (end - start));
   }
 

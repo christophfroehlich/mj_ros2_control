@@ -81,6 +81,7 @@ enum ControlMethod_
   POSITION  = (1 << 0),
   VELOCITY  = (1 << 1),
   EFFORT    = (1 << 2),
+  POS_VELOCITY    = (1 << 3),
 };
 
 typedef SafeEnum<enum ControlMethod_> ControlMethod;
@@ -130,6 +131,8 @@ public:
   std::vector<double> pos_state;
   std::vector<double> vel_state;
   std::vector<double> eff_state;
+  std::vector<double> stiff;  // Proportional gain
+  std::vector<double> damp;   // Derivative gain
 
   /// \brief vector with the control method defined in the URDF for each joint.
   std::vector<ControlMethod> joint_control_methods_;
