@@ -1,0 +1,7 @@
+<library path="mj_ros2_control">
+  <class name="mj_ros2_control/Simulator"
+    type="mj_ros2_control::Simulator"
+    base_class_type="hardware_interface::SystemInterface">
+    <description> A simulation environment for MuJoCo with ros2_control</description>
+  </class>
+</library>
