@@ -304,9 +304,9 @@ int MuJoCoSimulator::simulateImpl(
   }
 
   // Initialize buffers for ros2_control.
-  pos_state.resize(m->nu);
-  vel_state.resize(m->nu);
-  eff_state.resize(m->nu);
+  pos_state.resize(m->nq);
+  vel_state.resize(m->nq);
+  eff_state.resize(m->nq);
   pos_cmd.resize(m->nu, std::numeric_limits<double>::quiet_NaN());
   vel_cmd.resize(m->nu, std::numeric_limits<double>::quiet_NaN());
   eff_cmd.resize(m->nu, std::numeric_limits<double>::quiet_NaN());
@@ -384,7 +384,7 @@ void MuJoCoSimulator::write(
 
 void MuJoCoSimulator::syncStates()
 {
-  for (auto i = 0; i < m->nu; ++i) {
+  for (auto i = 0; i < m->nq; ++i) {
     pos_state[i] = d->qpos[i];
     vel_state[i] = d->qvel[i]; // d->actuator_velocity[i];
     eff_state[i] = d->actuator_force[i];
