@@ -73,81 +73,117 @@ Simulator::CallbackReturn Simulator::on_init(const hardware_interface::HardwareI
   m_velocities.resize(info_.joints.size(), std::numeric_limits<double>::quiet_NaN());
   m_efforts.resize(info_.joints.size(), std::numeric_limits<double>::quiet_NaN());
   m_position_commands.resize(info_.joints.size(), std::numeric_limits<double>::quiet_NaN());
-  m_velocity_commands.resize(info_.joints.size(), 0.0);
+  m_velocity_commands.resize(info_.joints.size(), std::numeric_limits<double>::quiet_NaN());
+  m_effort_commands.resize(info_.joints.size(), std::numeric_limits<double>::quiet_NaN());
 
-  for (const hardware_interface::ComponentInfo & joint : info_.joints) {
-    if (joint.command_interfaces.size() != 2) {
-      RCLCPP_ERROR(
-        rclcpp::get_logger("Simulator"),
-        "Joint '%s' needs two possible command interfaces.", joint.name.c_str());
-      return Simulator::CallbackReturn::ERROR;
+  for (unsigned int j = 0; j < info_.joints.size(); j++) {
+    auto & joint_info = info_.joints[j];
+    std::string joint_name = joint_info.name;
+    RCLCPP_INFO_STREAM(get_logger(), "Loading joint: " << joint_name);
+
+    RCLCPP_INFO_STREAM(get_logger(), "\tCommand:");
+    // register the command handles
+    for (unsigned int i = 0; i < joint_info.command_interfaces.size(); i++) {
+      if (joint_info.command_interfaces[i].name == "position") {
+        RCLCPP_INFO_STREAM(get_logger(), "\t\t position");
+        command_interfaces_.emplace_back(
+          joint_name,
+          hardware_interface::HW_IF_POSITION,
+          &m_position_commands[j]);
+      }
+      if (joint_info.command_interfaces[i].name == "velocity") {
+        RCLCPP_INFO_STREAM(get_logger(), "\t\t velocity");
+        command_interfaces_.emplace_back(
+          joint_name,
+          hardware_interface::HW_IF_VELOCITY,
+          &m_velocity_commands[j]);
+      }
+      if (joint_info.command_interfaces[i].name == "effort") {
+        RCLCPP_INFO_STREAM(get_logger(), "\t\t effort");
+        command_interfaces_.emplace_back(
+          joint_name,
+          hardware_interface::HW_IF_EFFORT,
+          &m_effort_commands[j]);
+      }
     }
+    RCLCPP_INFO_STREAM(get_logger(), "\tState:");
 
-    if (!(joint.command_interfaces[0].name == hardware_interface::HW_IF_POSITION ||
-      joint.command_interfaces[1].name == hardware_interface::HW_IF_VELOCITY))
-    {
-      RCLCPP_ERROR(
-        rclcpp::get_logger("Simulator"),
-        "Joint '%s' needs the following command interfaces in that order: %s, %s.",
-        joint.name.c_str(), hardware_interface::HW_IF_POSITION,
-        hardware_interface::HW_IF_VELOCITY);
-      return Simulator::CallbackReturn::ERROR;
-    }
-
-    if (joint.state_interfaces.size() != 3) {
-      RCLCPP_ERROR(
-        rclcpp::get_logger("Simulator"), "Joint '%s' needs 3 state interfaces.",
-        joint.name.c_str());
-      return Simulator::CallbackReturn::ERROR;
-    }
-
-    if (!(joint.state_interfaces[0].name == hardware_interface::HW_IF_POSITION ||
-      joint.state_interfaces[0].name == hardware_interface::HW_IF_VELOCITY ||
-      joint.state_interfaces[0].name == hardware_interface::HW_IF_EFFORT))
-    {
-      RCLCPP_ERROR(
-        rclcpp::get_logger("Simulator"),
-        "Joint '%s' needs the following state interfaces in that order: %s, %s, and %s.",
-        joint.name.c_str(), hardware_interface::HW_IF_POSITION,
-        hardware_interface::HW_IF_VELOCITY, hardware_interface::HW_IF_EFFORT);
-      return Simulator::CallbackReturn::ERROR;
+    // register the state handles
+    for (unsigned int i = 0; i < joint_info.state_interfaces.size(); i++) {
+      if (joint_info.state_interfaces[i].name == "position") {
+        RCLCPP_INFO_STREAM(get_logger(), "\t\t position");
+        state_interfaces_.emplace_back(
+          joint_name,
+          hardware_interface::HW_IF_POSITION,
+          &m_positions[j]);
+      }
+      if (joint_info.state_interfaces[i].name == "velocity") {
+        RCLCPP_INFO_STREAM(get_logger(), "\t\t velocity");
+        state_interfaces_.emplace_back(
+          joint_name,
+          hardware_interface::HW_IF_VELOCITY,
+          &m_velocities[j]);
+      }
+      if (joint_info.state_interfaces[i].name == "effort") {
+        RCLCPP_INFO_STREAM(get_logger(), "\t\t effort");
+        state_interfaces_.emplace_back(
+          joint_name,
+          hardware_interface::HW_IF_EFFORT,
+          &m_efforts[j]);
+      }
     }
   }
+  // TODO(anyone) evaluate which checks are necessary
+  // for (const hardware_interface::ComponentInfo & joint : info_.joints) {
+  // if (joint.command_interfaces.size() != 2) {
+  //   RCLCPP_ERROR(
+  //     rclcpp::get_logger("Simulator"),
+  //     "Joint '%s' needs two possible command interfaces.", joint.name.c_str());
+  //   return Simulator::CallbackReturn::ERROR;
+  // }
+
+  // if (!(joint.command_interfaces[0].name == hardware_interface::HW_IF_POSITION ||
+  //   joint.command_interfaces[1].name == hardware_interface::HW_IF_VELOCITY))
+  // {
+  //   RCLCPP_ERROR(
+  //     rclcpp::get_logger("Simulator"),
+  //     "Joint '%s' needs the following command interfaces in that order: %s, %s.",
+  //     joint.name.c_str(), hardware_interface::HW_IF_POSITION,
+  //     hardware_interface::HW_IF_VELOCITY);
+  //   return Simulator::CallbackReturn::ERROR;
+  // }
+
+  // if (joint.state_interfaces.size() != 3) {
+  //   RCLCPP_ERROR(
+  //     rclcpp::get_logger("Simulator"), "Joint '%s' needs 3 state interfaces.",
+  //     joint.name.c_str());
+  //   return Simulator::CallbackReturn::ERROR;
+  // }
+
+  // if (!(joint.state_interfaces[0].name == hardware_interface::HW_IF_POSITION ||
+  //   joint.state_interfaces[0].name == hardware_interface::HW_IF_VELOCITY ||
+  //   joint.state_interfaces[0].name == hardware_interface::HW_IF_EFFORT))
+  // {
+  //   RCLCPP_ERROR(
+  //     rclcpp::get_logger("Simulator"),
+  //     "Joint '%s' needs the following state interfaces in that order: %s, %s, and %s.",
+  //     joint.name.c_str(), hardware_interface::HW_IF_POSITION,
+  //     hardware_interface::HW_IF_VELOCITY, hardware_interface::HW_IF_EFFORT);
+  //   return Simulator::CallbackReturn::ERROR;
+  // }
+  // }
 
   return Simulator::CallbackReturn::SUCCESS;
 }
 
 std::vector<hardware_interface::StateInterface> Simulator::export_state_interfaces()
 {
-  std::vector<hardware_interface::StateInterface> state_interfaces;
-  for (std::size_t i = 0; i < info_.joints.size(); i++) {
-    state_interfaces.emplace_back(
-      hardware_interface::StateInterface(
-        info_.joints[i].name, hardware_interface::HW_IF_POSITION, &m_positions[i]));
-    state_interfaces.emplace_back(
-      hardware_interface::StateInterface(
-        info_.joints[i].name, hardware_interface::HW_IF_VELOCITY, &m_velocities[i]));
-    state_interfaces.emplace_back(
-      hardware_interface::StateInterface(
-        info_.joints[i].name, hardware_interface::HW_IF_EFFORT, &m_efforts[i]));
-  }
-
-  return state_interfaces;
+  return std::move(state_interfaces_);
 }
 
 std::vector<hardware_interface::CommandInterface> Simulator::export_command_interfaces()
 {
-  std::vector<hardware_interface::CommandInterface> command_interfaces;
-  for (std::size_t i = 0; i < info_.joints.size(); i++) {
-    command_interfaces.emplace_back(
-      hardware_interface::CommandInterface(
-        info_.joints[i].name, hardware_interface::HW_IF_POSITION, &m_position_commands[i]));
-    command_interfaces.emplace_back(
-      hardware_interface::CommandInterface(
-        info_.joints[i].name, hardware_interface::HW_IF_VELOCITY, &m_velocity_commands[i]));
-  }
-
-  return command_interfaces;
+  return std::move(command_interfaces_);
 }
 
 Simulator::return_type Simulator::prepare_command_mode_switch(
@@ -166,12 +202,24 @@ Simulator::return_type Simulator::read(
   MuJoCoSimulator::getInstance().read(m_positions, m_velocities, m_efforts);
 
   // Start with the current positions as safe default, but let active
-  // controllers overrride them in each cycle.
+  // controllers override them in each cycle.
   if (std::any_of(
       m_position_commands.begin(), m_position_commands.end(),
       [](double i) {return std::isnan(i);}))
   {
     m_position_commands = m_positions;
+  }
+  if (std::any_of(
+      m_velocity_commands.begin(), m_velocity_commands.end(),
+      [](double i) {return std::isnan(i);}))
+  {
+    m_velocity_commands = m_velocities;
+  }
+  if (std::any_of(
+      m_effort_commands.begin(), m_effort_commands.end(),
+      [](double i) {return std::isnan(i);}))
+  {
+    m_effort_commands = m_efforts;
   }
 
   return return_type::OK;
@@ -181,7 +229,7 @@ Simulator::return_type Simulator::write(
   [[maybe_unused]] const rclcpp::Time & time,
   [[maybe_unused]] const rclcpp::Duration & period)
 {
-  MuJoCoSimulator::getInstance().write(m_position_commands, m_velocity_commands);
+  MuJoCoSimulator::getInstance().write(m_position_commands, m_velocity_commands, m_effort_commands);
   return return_type::OK;
 }
 

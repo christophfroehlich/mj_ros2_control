@@ -47,6 +47,7 @@
 #include "hardware_interface/hardware_info.hpp"
 #include "hardware_interface/system.hpp"
 #include "hardware_interface/system_interface.hpp"
+#include "rclcpp/logger.hpp"
 #include "rclcpp/macros.hpp"
 #include "rclcpp_lifecycle/node_interfaces/lifecycle_node_interface.hpp"
 
@@ -86,9 +87,13 @@ public:
   return_type write(const rclcpp::Time & time, const rclcpp::Duration & period) override;
 
 private:
+  std::vector<hardware_interface::StateInterface> state_interfaces_;
+  std::vector<hardware_interface::CommandInterface> command_interfaces_;
+
   // Command buffers for the controllers
   std::vector<double> m_position_commands;
   std::vector<double> m_velocity_commands;
+  std::vector<double> m_effort_commands;
 
   // State buffers for the controllers
   std::vector<double> m_positions;

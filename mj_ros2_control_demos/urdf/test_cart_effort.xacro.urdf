@@ -1,6 +1,12 @@
-<?xml version="1.0" ?>
+<?xml version="1.0"?>
 <robot name="cart">
+
+  <mujoco>
+    <compiler balanceinertia="true" discardvisual="false"/>
+  </mujoco>
+
   <link name="world"/>
+
   <link name="slideBar">
     <visual>
       <geometry>
@@ -45,9 +51,10 @@
     <dynamics damping="0.0" friction="0.0"/>
   </joint>
 
-  <ros2_control name="GazeboSystem" type="system">
+  <ros2_control name="cart_effort_hw" type="system">
     <hardware>
-      <plugin>gazebo_ros2_control/GazeboSystem</plugin>
+      <plugin>mj_ros2_control/Simulator</plugin>
+      <param name="update_rate">100</param>
     </hardware>
     <joint name="slider_to_cart">
       <command_interface name="effort">
@@ -61,10 +68,4 @@
       <state_interface name="effort"/>
     </joint>
   </ros2_control>
-
-  <gazebo>
-    <plugin filename="libgazebo_ros2_control.so" name="gazebo_ros2_control">
-      <parameters>$(find gazebo_ros2_control_demos)/config/cart_controller_effort.yaml</parameters>
-    </plugin>
-  </gazebo>
 </robot>

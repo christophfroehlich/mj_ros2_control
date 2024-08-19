@@ -50,6 +50,40 @@
 
 namespace mj_ros2_control
 {
+template<class ENUM, class UNDERLYING = typename std::underlying_type<ENUM>::type>
+class SafeEnum
+{
+public:
+  SafeEnum()
+  : mFlags(0) {}
+  explicit SafeEnum(ENUM singleFlag)
+  : mFlags(singleFlag) {}
+  SafeEnum(const SafeEnum & original)
+  : mFlags(original.mFlags) {}
+  ~SafeEnum() = default;
+
+  SafeEnum & operator=(const SafeEnum & original) = default;
+  SafeEnum & operator|=(ENUM addValue) {mFlags |= addValue; return *this;}
+  SafeEnum operator|(ENUM addValue) {SafeEnum result(*this); result |= addValue; return result;}
+  SafeEnum & operator&=(ENUM maskValue) {mFlags &= maskValue; return *this;}
+  SafeEnum operator&(ENUM maskValue) {SafeEnum result(*this); result &= maskValue; return result;}
+  SafeEnum operator~() {SafeEnum result(*this); result.mFlags = ~result.mFlags; return result;}
+  explicit operator bool() {return mFlags != 0;}
+
+protected:
+  UNDERLYING mFlags;
+};
+
+// Methods used to control a joint.
+enum ControlMethod_
+{
+  NONE      = 0,
+  POSITION  = (1 << 0),
+  VELOCITY  = (1 << 1),
+  EFFORT    = (1 << 2),
+};
+
+typedef SafeEnum<enum ControlMethod_> ControlMethod;
 /**
  * @brief MuJoCo's physics engine with rendering and basic window mouse interaction
  *
@@ -92,9 +126,13 @@ public:
   // Buffers for data exchange with ros2_control
   std::vector<double> pos_cmd;
   std::vector<double> vel_cmd;
+  std::vector<double> eff_cmd;
   std::vector<double> pos_state;
   std::vector<double> vel_state;
   std::vector<double> eff_state;
+
+  /// \brief vector with the control method defined in the URDF for each joint.
+  std::vector<ControlMethod> joint_control_methods_;
 
   // Safety guards for buffers
   std::mutex state_mutex;
@@ -117,7 +155,8 @@ public:
   // Non-blocking
   void read(std::vector<double> & pos, std::vector<double> & vel, std::vector<double> & eff);
   void write(
-    const std::vector<double> & pos, const std::vector<double> & vel);
+    const std::vector<double> & pos, const std::vector<double> & vel,
+    const std::vector<double> & eff);
 };
 
 }  // namespace mj_ros2_control

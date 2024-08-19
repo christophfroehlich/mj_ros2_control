@@ -1,6 +1,10 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="pendulum on cart">
 
+  <mujoco>
+    <compiler balanceinertia="true" discardvisual="false"/>
+  </mujoco>
+
   <xacro:macro name="quadr_block" params="mass width height name">
     <link name="${name}">
       <collision>
@@ -75,9 +79,9 @@
     <dynamics damping="0.1" friction="0.0"/>
   </joint>
 
-  <ros2_control name="GazeboSystem" type="system">
+  <ros2_control name="pendulum_hw" type="system">
     <hardware>
-      <plugin>gazebo_ros2_control/GazeboSystem</plugin>
+      <plugin>mj_ros2_control/Simulator</plugin>
     </hardware>
     <joint name="slider_to_cart">
       <command_interface name="effort">
@@ -99,10 +103,4 @@
       <state_interface name="effort"/>
     </joint>
   </ros2_control>
-
-  <gazebo>
-    <plugin filename="libgazebo_ros2_control.so" name="gazebo_ros2_control">
-      <parameters>$(find gazebo_ros2_control_demos)/config/cart_controller_effort.yaml</parameters>
-    </plugin>
-  </gazebo>
 </robot>

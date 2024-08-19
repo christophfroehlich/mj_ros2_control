@@ -1,6 +1,10 @@
 <?xml version="1.0"?>
 <robot name="robot" xmlns:xacro="http://ros.org/wiki/xacro">
 
+  <mujoco>
+    <compiler balanceinertia="true" discardvisual="false"/>
+  </mujoco>
+
   <!--
         A fictitious robot model for testing purposes.
         The kinematics is roughly inspired by the universal robots ur10.

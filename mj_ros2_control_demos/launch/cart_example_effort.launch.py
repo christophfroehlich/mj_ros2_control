@@ -1,86 +1,144 @@
-# Copyright 2020 Open Source Robotics Foundation, Inc.
+################################################################################
+# Copyright 2022 FZI Research Center for Information Technology
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
 #
-#     http://www.apache.org/licenses/LICENSE-2.0
+# 1. Redistributions of source code must retain the above copyright notice,
+# this list of conditions and the following disclaimer.
 #
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
+#
+# 3. Neither the name of the copyright holder nor the names of its
+# contributors may be used to endorse or promote products derived from this
+# software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+################################################################################
 
-import os
-
-from ament_index_python.packages import get_package_share_directory
+# -----------------------------------------------------------------------------
+# \file    simulation.launch.py
+#
+# \author  Stefan Scherzinger <scherzin@fzi.de>
+# \date    2022/02/14
+#
+# -----------------------------------------------------------------------------
 
 
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, IncludeLaunchDescription, RegisterEventHandler
-from launch.event_handlers import OnProcessExit
-from launch.launch_description_sources import PythonLaunchDescriptionSource
-
+from launch.substitutions import (
+    Command,
+    FindExecutable,
+    PathJoinSubstitution,
+)
 from launch_ros.actions import Node
-
-import xacro
+from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
-    gazebo = IncludeLaunchDescription(
-                PythonLaunchDescriptionSource([os.path.join(
-                    get_package_share_directory('gazebo_ros'), 'launch'), '/gazebo.launch.py']),
-             )
+    # Declare arguments
+    declared_arguments = []
 
-    gazebo_ros2_control_demos_path = os.path.join(
-        get_package_share_directory('gazebo_ros2_control_demos'))
-
-    xacro_file = os.path.join(gazebo_ros2_control_demos_path,
-                              'urdf',
-                              'test_cart_effort.xacro.urdf')
-
-    doc = xacro.parse(open(xacro_file))
-    xacro.process_doc(doc)
-    params = {'robot_description': doc.toxml()}
-
-    node_robot_state_publisher = Node(
-        package='robot_state_publisher',
-        executable='robot_state_publisher',
-        output='screen',
-        parameters=[params]
-    )
-
-    spawn_entity = Node(package='gazebo_ros', executable='spawn_entity.py',
-                        arguments=['-topic', 'robot_description',
-                                   '-entity', 'cart'],
-                        output='screen')
-
-    load_joint_state_broadcaster = ExecuteProcess(
-        cmd=['ros2', 'control', 'load_controller', '--set-state', 'active',
-             'joint_state_broadcaster'],
-        output='screen'
-    )
-
-    load_joint_trajectory_controller = ExecuteProcess(
-        cmd=['ros2', 'control', 'load_controller', '--set-state', 'active', 'effort_controller'],
-        output='screen'
-    )
-
-    return LaunchDescription([
-        RegisterEventHandler(
-            event_handler=OnProcessExit(
-                target_action=spawn_entity,
-                on_exit=[load_joint_state_broadcaster],
+    # Build the URDF with command line xacro.
+    # We also pass parameters for the system_interface here.
+    robot_description_content = Command(
+        [
+            PathJoinSubstitution([FindExecutable(name="xacro")]),
+            " ",
+            PathJoinSubstitution(
+                [
+                    FindPackageShare("mj_ros2_control_demos"),
+                    "urdf",
+                    "test_cart_effort.xacro.urdf",
+                ]
             )
-        ),
-        RegisterEventHandler(
-            event_handler=OnProcessExit(
-                target_action=load_joint_state_broadcaster,
-                on_exit=[load_joint_trajectory_controller],
-            )
-        ),
-        gazebo,
-        node_robot_state_publisher,
-        spawn_entity,
-    ])
+        ]
+    )
+    robot_description = {"robot_description": robot_description_content}
+
+    robot_controllers = PathJoinSubstitution(
+        [
+            FindPackageShare("mj_ros2_control_demos"),
+            "config",
+            "cart_controller_effort.yaml",
+        ]
+    )
+
+    # The actual simulation is a ROS2-control system interface.
+    # Start that with the usual ROS2 controller manager mechanisms.
+    control_node = Node(
+        package="controller_manager",
+        executable="ros2_control_node",
+        parameters=[robot_description, robot_controllers],
+        output="both",
+    )
+
+    # Convenience function for easy spawner construction
+    def controller_spawner(name, *args):
+        return Node(
+            package="controller_manager",
+            executable="spawner",
+            output="screen",
+            arguments=[name] + [a for a in args],
+        )
+
+    # Active controllers
+    active_list = [
+        "joint_state_broadcaster",
+        "effort_controller",
+    ]
+    active_spawners = [controller_spawner(
+        controller) for controller in active_list]
+
+    # Inactive controllers
+    inactive_list = [
+    ]
+    state = "--inactive"
+    inactive_spawners = [
+        controller_spawner(controller, state) for controller in inactive_list
+    ]
+
+    # TF tree
+    robot_state_publisher = Node(
+        package="robot_state_publisher",
+        executable="robot_state_publisher",
+        output="both",
+        parameters=[robot_description],
+    )
+
+    # Visualization
+    rviz_config = PathJoinSubstitution(
+        [FindPackageShare("mj_ros2_control_demos"),
+         "etc", "cart.rviz"]
+    )
+    rviz = Node(
+        package="rviz2",
+        executable="rviz2",
+        name="rviz2",
+        output="log",
+        arguments=["-d", rviz_config],
+    )
+
+    # Nodes to start
+    nodes = (
+        [control_node,
+         robot_state_publisher,
+         rviz
+         ]
+        + active_spawners
+        + inactive_spawners
+    )
+
+    return LaunchDescription(declared_arguments + nodes)
