@@ -99,11 +99,6 @@ install(
 )
 
 install(
-  DIRECTORY config etc launch urdf
-  DESTINATION share/${PROJECT_NAME}
-)
-
-install(
   TARGETS ${PROJECT_NAME} mujoco_simulator
   DESTINATION lib
 )

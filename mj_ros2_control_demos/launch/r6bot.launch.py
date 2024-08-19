@@ -59,16 +59,16 @@ def generate_launch_description():
             " ",
             PathJoinSubstitution(
                 [
-                    FindPackageShare("mj_ros2_control"),
+                    FindPackageShare("mj_ros2_control_demos"),
                     "urdf",
-                    "robot.urdf.xacro",
+                    "r6bot.urdf.xacro",
                 ]
             ),
             " ",
             "mujoco_model:=",
             PathJoinSubstitution(
                 [
-                    FindPackageShare("mj_ros2_control"),
+                    FindPackageShare("mj_ros2_control_demos"),
                     "etc",
                     "robot_mujoco.xml",
                 ]
@@ -79,9 +79,9 @@ def generate_launch_description():
 
     robot_controllers = PathJoinSubstitution(
         [
-            FindPackageShare("mj_ros2_control"),
+            FindPackageShare("mj_ros2_control_demos"),
             "config",
-            "controller_manager.yaml",
+            "r6bot.yaml",
         ]
     )
 
@@ -91,17 +91,7 @@ def generate_launch_description():
         package="controller_manager",
         executable="ros2_control_node",
         parameters=[robot_description, robot_controllers],
-        # prefix="screen -d -m gdb -command=/home/scherzin/.ros/my_debug_log --ex run --args",  # noqa: E501
         output="both",
-        remappings=[
-            ("motion_control_handle/target_frame", "target_frame"),
-            ("cartesian_motion_controller/target_frame", "target_frame"),
-            ("cartesian_compliance_controller/target_frame", "target_frame"),
-            ("cartesian_force_controller/target_wrench", "target_wrench"),
-            ("cartesian_compliance_controller/target_wrench", "target_wrench"),
-            ("cartesian_force_controller/ft_sensor_wrench", "ft_sensor_wrench"),
-            ("cartesian_compliance_controller/ft_sensor_wrench", "ft_sensor_wrench"),
-        ],
     )
 
     # Convenience function for easy spawner construction
@@ -139,8 +129,8 @@ def generate_launch_description():
 
     # Visualization
     rviz_config = PathJoinSubstitution(
-        [FindPackageShare("mj_ros2_control"),
-         "etc", "robot.rviz"]
+        [FindPackageShare("mj_ros2_control_demos"),
+         "etc", "r6bot.rviz"]
     )
     rviz = Node(
         package="rviz2",

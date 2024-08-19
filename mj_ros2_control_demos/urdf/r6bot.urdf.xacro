@@ -6,7 +6,7 @@
         The kinematics is roughly inspired by the universal robots ur10.
         -->
 
-  <xacro:include filename="$(find mj_ros2_control)/urdf/joint.urdf.xacro"/>
+  <xacro:include filename="$(find mj_ros2_control_demos)/urdf/joint.urdf.xacro"/>
 
   <!-- ROS2 control interfaces -->
   <ros2_control name="r6bot_hw" type="system">
